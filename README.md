@@ -15,11 +15,19 @@ the JavaScript code that is embedded in the page. This way, the login can
 be performed without resorting to a browser.
 
 
+Installation
+------------
+
+The script can be installed using the following command:
+
+    pip install git+https://gitlab.com/jkuebart/oc-msft.git#egg=oc_msft
+
+
 Usage
 -----
 
-    usage: oc_msft.py [-h] [-p PASSWORD] [-s SECRET] [-u USER] [-v] [-w WRAPPER]
-                      server
+    usage: oc_msft [-h] [-p PASSWORD] [-s SECRET] [-u USER] [-v] [-w WRAPPER]
+                   server
 
     Determine connection parameters for the given Network Connect VPN using
     Microsoft's SAML single sign-on and output them for OpenConnect.

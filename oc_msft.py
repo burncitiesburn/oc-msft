@@ -5,6 +5,8 @@ Determine connection parameters for the given Network Connect VPN using
 Microsoft's SAML single sign-on and output them for OpenConnect.
 """
 
+__version__ = "0.0.1"
+
 from argparse import ArgumentParser
 from collections import namedtuple
 from getpass import getpass
@@ -223,9 +225,9 @@ def tncc_preauth(wrapper, dspreauth, dssignin, host):
     return dspreauth
 
 
-def main(args):
+def login(args):
     """
-    Perform a Microsoft SAML SSO login.
+    Perform a Microsoft SAML SSO login and return the connection parameters.
 
     Arguments are:
         password    Password, optional.
@@ -336,7 +338,14 @@ def parse_args(args = None):
     return parser.parse_args(args)
 
 
+def main():
+    """
+    Invoke login() with the command-line arguments and print the result.
+    """
+    env = login(parse_args())
+    for key, val in env.items():
+        print(f"{key}={shlex.quote(val)}")
+
+
 if __name__ == "__main__":
-    env = main(parse_args())
-    for k, v in env.items():
-        print(f"{k}={shlex.quote(v)}")
+    main()
