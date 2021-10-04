@@ -95,7 +95,8 @@ class FormProcessor:
     I load, fill in and send HTML forms. I provide access to the cookies
     exchanged with the server.
     """
-    def __init__(self):
+    def __init__(self, password):
+        self.password = password
         self.cookies = urllib.request.HTTPCookieProcessor()
         self.opener = urllib.request.build_opener(self.cookies)
         self.opener.addheaders = [(
@@ -147,7 +148,7 @@ class FormProcessor:
             logging.debug("< %s", res)
             return res
 
-    def process_forms(self, url, password):
+    def process_forms(self, url):
         """
         Keep reading from the URL or Request while they contain known
         forms, filling them in and returning them. Stop when a DSID cookie
@@ -168,9 +169,14 @@ class FormProcessor:
 
             form = forms.forms[name]
             if "Password" in form.fields:
-                form.fields["Password"] = password
-            url = urljoin(self.url, form.action)
+                if self.password:
+                    form.fields["Password"] = self.password
+                    self.password = None
+                else:
+                    raise RuntimeError("Incorrect password")
+
             logging.debug("> %s", form.fields)
+            url = urljoin(self.url, form.action)
             url = Request(url, data=urlencode(form.fields).encode())
 
 
@@ -232,9 +238,9 @@ def main(args):
     url = args.server
     totp = pyotp.TOTP(args.secret)
     wrapper = args.wrapper
-    form_proc = FormProcessor()
+    form_proc = FormProcessor(args.password)
     while True:
-        config = form_proc.process_forms(url, args.password)
+        config = form_proc.process_forms(url)
         if form_proc.get_cookie("DSID"):
             return {
                 "CONNECT_URL": form_proc.url,
