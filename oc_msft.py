@@ -233,7 +233,28 @@ def do_login(form_proc, config, username):
     }
     url = config["urlGetCredentialType"]
     creds = form_proc.get_json(url, data)
-    return creds["Credentials"]["FederationRedirectUrl"]
+    if "FederationRedirectUrl" in creds["Credentials"]:
+        return urljoin(
+            form_proc.url,
+            creds["Credentials"]["FederationRedirectUrl"]
+        )
+
+    if form_proc.password:
+        password = form_proc.password
+        form_proc.password = None
+    else:
+        password = getpass("Password: ")
+    data = {
+        "canary": config["canary"],
+        "ctx": config["sCtx"],
+        "flowToken": creds["FlowToken"],
+        "hpgrequestid": config["sessionId"],
+        "login": username,
+        "passwd": password,
+    }
+    logging.debug("> %s", data)
+    url = urljoin(form_proc.url, config["urlPost"])
+    return Request(url, data=urlencode(data).encode())
 
 
 def do_authentication(form_proc, config, username, totp):
@@ -290,7 +311,8 @@ def do_authentication(form_proc, config, username, totp):
         "request": config["sCtx"],
     }
     logging.debug("> %s", data)
-    return Request(config["urlPost"], data=urlencode(data).encode())
+    url = urljoin(form_proc.url, config["urlPost"])
+    return Request(url, data=urlencode(data).encode())
 
 
 def tncc_preauth(wrapper, dspreauth, dssignin, host):
@@ -348,7 +370,7 @@ def login(args):
             }
 
         if "urlGetCredentialType" in config:
-            # Step one: redirect to federated login page.
+            # Step one: login or redirect to federated login page.
             if not username:
                 sys.stderr.write("Username: ")
                 username = input()
@@ -361,8 +383,18 @@ def login(args):
             totp = None
             username = None
 
+        elif "urlPost" in config:
+            # Step three: not sure what this is for.
+            data = {
+                "ctx": config["sCtx"],
+                "flowToken": config["sFT"],
+                "hpgrequestid": config["sessionId"],
+            }
+            url = urljoin(form_proc.url, config["urlPost"])
+            url = Request(url, data=urlencode(data).encode())
+
         elif wrapper and form_proc.get_cookie("DSPREAUTH"):
-            # Step three: run host checker.
+            # Step four: run host checker.
             url = form_proc.url
             dspreauth = tncc_preauth(
                 wrapper,
