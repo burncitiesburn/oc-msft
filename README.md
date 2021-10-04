@@ -26,7 +26,8 @@ The script can be installed using the following command:
 Usage
 -----
 
-    usage: oc_msft [-h] [-p PASSWORD] [-s SECRET] [-u USER] [-v] [-w WRAPPER]
+    usage: oc_msft [-h] [-A USER_AGENT] [-p PASSWORD] [-s SECRET] [-u USER] [-v]
+                   [-w WRAPPER]
                    server
 
     Determine connection parameters for the given Network Connect VPN using
@@ -37,6 +38,8 @@ Usage
 
     optional arguments:
       -h, --help            show this help message and exit
+      -A USER_AGENT, --user-agent USER_AGENT
+                            user agent to send
       -p PASSWORD, --password PASSWORD
                             login password
       -s SECRET, --secret SECRET

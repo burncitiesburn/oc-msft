@@ -98,15 +98,12 @@ class FormProcessor:
     I load, fill in and send HTML forms. I provide access to the cookies
     exchanged with the server.
     """
-    def __init__(self, password):
+    def __init__(self, user_agent, password):
         self.password = password
         self.cookies = urllib.request.HTTPCookieProcessor()
         self.opener = urllib.request.build_opener(self.cookies)
-        self.opener.addheaders = [(
-            "User-Agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/605.1.15 (KHTML, like Gecko)"
-        )]
+        if user_agent:
+            self.opener.addheaders = (("User-Agent", user_agent),)
         self.url = None
 
     def load_url(self, url):
@@ -234,13 +231,14 @@ def login(args):
         secret      TOTP secret, optional.
         server      Endpoint.
         user        Username, optional.
+        user_agent  User-Agent, optional.
         verbose     Verbosity, optional.
         wrapper     TNCC wrapper script, optional.
     """
     logging.basicConfig(
         level=max(0, logging.WARNING - 10 * (args.verbose or 0))
     )
-    form_proc = FormProcessor(args.password)
+    form_proc = FormProcessor(args.user_agent, args.password)
     totp = pyotp.TOTP(args.secret) if args.secret else None
     url = args.server
     username = args.user
@@ -332,6 +330,7 @@ def parse_args(args = None):
     Process command-line arguments.
     """
     parser = ArgumentParser(description=sys.modules[__name__].__doc__)
+    parser.add_argument("-A", "--user-agent", help="user agent to send")
     parser.add_argument("-p", "--password", help="login password")
     parser.add_argument("-s", "--secret", help="TOTP secret (SHA1 base32)")
     parser.add_argument("-u", "--user", help="login username")
