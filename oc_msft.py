@@ -7,6 +7,7 @@ Microsoft's SAML single sign-on and output them for OpenConnect.
 
 from argparse import ArgumentParser
 from collections import namedtuple
+from getpass import getpass
 from html.parser import HTMLParser
 from socket import socketpair
 from subprocess import Popen
@@ -173,7 +174,7 @@ class FormProcessor:
                     form.fields["Password"] = self.password
                     self.password = None
                 else:
-                    raise RuntimeError("Incorrect password")
+                    form.fields["Password"] = getpass("Password: ")
 
             logging.debug("> %s", form.fields)
             url = urljoin(self.url, form.action)
@@ -230,13 +231,13 @@ def main(args):
         v           Verbosity, optional.
         server      Endpoint.
         username    Username.
-        password    Password.
-        secret      TOTP secret.
+        password    Password, optional.
+        secret      TOTP secret, optional.
         wrapper     TNCC wrapper script, optional.
     """
     logging.basicConfig(level=max(0, logging.WARNING - 10 * (args.v or 0)))
     url = args.server
-    totp = pyotp.TOTP(args.secret)
+    totp = pyotp.TOTP(args.secret) if args.secret else None
     wrapper = args.wrapper
     form_proc = FormProcessor(args.password)
     while True:
@@ -269,8 +270,12 @@ def main(args):
             }
             begin_auth = form_proc.get_json(config["urlBeginAuth"], data)
 
-            token = totp.now()
-            totp = None
+            if totp:
+                logging.info("Generating OATH TOTP token code")
+                token = totp.now()
+                totp = None
+            else:
+                token = getpass("OTP token: ")
             data = {
                 "AdditionalAuthData": token,
                 "AuthMethodId": "PhoneAppOTP",
@@ -315,8 +320,8 @@ def parse_args(args = None):
     parser.add_argument("-v", action="count", help="increase verbosity")
     parser.add_argument("server", help="VPN server")
     parser.add_argument("username", help="login username")
-    parser.add_argument("password", help="login password")
-    parser.add_argument("secret", help="TOTP secret (SHA1 base32)")
+    parser.add_argument("password", help="login password", nargs="?")
+    parser.add_argument("secret", help="TOTP secret (SHA1 base32)", nargs="?")
     parser.add_argument("wrapper", help="trojan wrapper script", nargs="?")
     return parser.parse_args(args)
 

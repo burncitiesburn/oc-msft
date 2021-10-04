@@ -18,7 +18,7 @@ be performed without resorting to a browser.
 Usage
 -----
 
-    usage: oc_msft.py [-h] [-v] server username password secret [wrapper]
+    usage: oc_msft.py [-h] [-v] server username [password] [secret] [wrapper]
 
     Determine connection parameters for the given Network Connect VPN using
     Microsoft's SAML single sign-on and output them for OpenConnect.
