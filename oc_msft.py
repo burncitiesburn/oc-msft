@@ -228,18 +228,21 @@ def main(args):
     Perform a Microsoft SAML SSO login.
 
     Arguments are:
-        v           Verbosity, optional.
-        server      Endpoint.
-        username    Username.
         password    Password, optional.
         secret      TOTP secret, optional.
+        server      Endpoint.
+        user        Username, optional.
+        verbose     Verbosity, optional.
         wrapper     TNCC wrapper script, optional.
     """
-    logging.basicConfig(level=max(0, logging.WARNING - 10 * (args.v or 0)))
-    url = args.server
-    totp = pyotp.TOTP(args.secret) if args.secret else None
-    wrapper = args.wrapper
+    logging.basicConfig(
+        level=max(0, logging.WARNING - 10 * (args.verbose or 0))
+    )
     form_proc = FormProcessor(args.password)
+    totp = pyotp.TOTP(args.secret) if args.secret else None
+    url = args.server
+    username = args.user
+    wrapper = args.wrapper
     while True:
         config = form_proc.process_forms(url)
         if form_proc.get_cookie("DSID"):
@@ -251,10 +254,14 @@ def main(args):
 
         if "urlGetCredentialType" in config:
             # Step one: redirect to federated login page.
+            if not username:
+                sys.stderr.write("Username: ")
+                username = input()
+
             data = {
                 "flowToken": config["sFT"],
                 "originalRequest": config["sCtx"],
-                "username": args.username,
+                "username": username,
             }
             url = config["urlGetCredentialType"]
             creds = form_proc.get_json(url, data)
@@ -291,13 +298,14 @@ def main(args):
                 "canary": config["canary"],
                 "flowToken": end_auth["FlowToken"],
                 "hpgrequestid": begin_auth["SessionId"],
-                "login": args.username,
+                "login": username,
                 "mfaAuthMethod": "PhoneAppOTP",
                 "otc": token,
                 "request": config["sCtx"],
             }
             logging.debug("> %s", data)
             url = Request(config["urlPost"], data=urlencode(data).encode())
+            username = None
 
         elif wrapper and form_proc.get_cookie("DSPREAUTH"):
             # Step three: run host checker.
@@ -317,12 +325,14 @@ def parse_args(args = None):
     Process command-line arguments.
     """
     parser = ArgumentParser(description=sys.modules[__name__].__doc__)
-    parser.add_argument("-v", action="count", help="increase verbosity")
+    parser.add_argument("-p", "--password", help="login password")
+    parser.add_argument("-s", "--secret", help="TOTP secret (SHA1 base32)")
+    parser.add_argument("-u", "--user", help="login username")
+    parser.add_argument(
+        "-v", "--verbose", action="count", help="increase verbosity"
+    )
+    parser.add_argument("-w", "--wrapper", help="trojan wrapper script")
     parser.add_argument("server", help="VPN server")
-    parser.add_argument("username", help="login username")
-    parser.add_argument("password", help="login password", nargs="?")
-    parser.add_argument("secret", help="TOTP secret (SHA1 base32)", nargs="?")
-    parser.add_argument("wrapper", help="trojan wrapper script", nargs="?")
     return parser.parse_args(args)
 
 

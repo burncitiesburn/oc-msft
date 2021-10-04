@@ -18,21 +18,25 @@ be performed without resorting to a browser.
 Usage
 -----
 
-    usage: oc_msft.py [-h] [-v] server username [password] [secret] [wrapper]
+    usage: oc_msft.py [-h] [-p PASSWORD] [-s SECRET] [-u USER] [-v] [-w WRAPPER]
+                      server
 
     Determine connection parameters for the given Network Connect VPN using
     Microsoft's SAML single sign-on and output them for OpenConnect.
 
     positional arguments:
-      server      VPN server
-      username    login username
-      password    login password
-      secret      TOTP secret (SHA1 base32)
-      wrapper     trojan wrapper script
+      server                VPN server
 
     optional arguments:
-      -h, --help  show this help message and exit
-      -v          increase verbosity
+      -h, --help            show this help message and exit
+      -p PASSWORD, --password PASSWORD
+                            login password
+      -s SECRET, --secret SECRET
+                            TOTP secret (SHA1 base32)
+      -u USER, --user USER  login username
+      -v, --verbose         increase verbosity
+      -w WRAPPER, --wrapper WRAPPER
+                            trojan wrapper script
 
 The wrapper script can be Russ Dill's original [`tncc.py`][TNCC] or one of
 the scripts in OpenConnect's `trojan` directory.
