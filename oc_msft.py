@@ -321,6 +321,11 @@ def login(args):
             form_proc.set_cookie("DSPREAUTH", dspreauth)
             wrapper = None
 
+        else:
+            raise RuntimeError(
+                "Failed to find or parse web form in login page."
+            )
+
 
 def parse_args(args = None):
     """
