@@ -62,12 +62,12 @@ The output of the script is modelled after OpenConnect's
 It can therefore be used just like OpenConnect's `--authenticate` option:
 
     eval $(
-        oc_msft.py \
-            https://vpn.example.com/ \
-            username \
-            password \
-            secret \
-            ./tncc-emulate.py
+        oc_msft \
+            -p password \
+            -s secret \
+            -u username \
+            -w ./tncc-emulate.py \
+            https://vpn.example.com/
     )
     [ -n "$COOKIE" ] && printf '%s\n' "$COOKIE" |
     sudo openconnect --cookie-on-stdin --protocol nc "$HOST"
