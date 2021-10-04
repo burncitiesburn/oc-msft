@@ -27,10 +27,10 @@ import pyotp
 
 # The known HTML form names and the submit buttons to be used.
 FORMS = {
-    "loginForm": (),
-    "hiddenform": (),
     "formSAMLSSO": (),
     "frmConfirmation": set(("btnContinue",)),
+    "hiddenform": (),
+    "loginForm": (),
 }
 
 
