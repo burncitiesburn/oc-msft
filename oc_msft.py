@@ -198,6 +198,29 @@ class FormProcessor:
                 cookie.value = value
 
 
+def choice(prompt, choices):
+    """
+    Interactively give the user a choice. The choices are expected to be a
+    dictionary of options and their descriptions. The chosen option is
+    returned.
+    """
+    choices = list(choices.items())
+    num = 0
+    while num < 1 or len(choices) < num:
+        for i, item in enumerate(choices):
+            sys.stderr.write(f" {1 + i}. {' '.join(item)}\n")
+        sys.stderr.write(f"{prompt}: [1] ")
+        num = input()
+        if not num:
+            num = 1
+        else:
+            try:
+                num = int(num)
+            except ValueError:
+                num = 0
+    return choices[num - 1][0]
+
+
 def do_login(form_proc, config, username):
     """
     Perform a login with the given username or redirect to the federated
@@ -219,8 +242,17 @@ def do_authentication(form_proc, config, username, totp):
     authenticate with it.
     """
 
+    # Pick an authentication method.
+    user_proofs = {
+        proof["authMethodId"]: proof["display"]
+        for proof in config["arrUserProofs"]
+    }
+    if totp and "PhoneAppOTP" in user_proofs:
+        method = "PhoneAppOTP"
+    else:
+        method = choice("Choose an authentication method", user_proofs)
     data = {
-        "AuthMethodId": "PhoneAppOTP",
+        "AuthMethodId": method,
         "Method": "BeginAuth",
         "ctx": config["sCtx"],
         "flowToken": config["sFT"],
@@ -229,14 +261,15 @@ def do_authentication(form_proc, config, username, totp):
     if not begin_auth["Success"]:
         logging.warning(begin_auth["Message"])
 
-    if totp:
+    # Perform the authentication.
+    if totp and method == "PhoneAppOTP":
         logging.info("Generating OATH TOTP token code")
         token = totp.now()
     else:
         token = getpass("OTP token: ")
     data = {
         "AdditionalAuthData": token,
-        "AuthMethodId": "PhoneAppOTP",
+        "AuthMethodId": method,
         "Ctx": config["sCtx"],
         "FlowToken": begin_auth["FlowToken"],
         "Method": "EndAuth",
@@ -252,7 +285,7 @@ def do_authentication(form_proc, config, username, totp):
         "flowToken": end_auth["FlowToken"],
         "hpgrequestid": begin_auth["SessionId"],
         "login": username,
-        "mfaAuthMethod": "PhoneAppOTP",
+        "mfaAuthMethod": method,
         "otc": token,
         "request": config["sCtx"],
     }
@@ -322,7 +355,7 @@ def login(args):
 
             url = do_login(form_proc, config, username)
 
-        elif "urlPost" in config:
+        elif "arrUserProofs" in config:
             # Step two: perform authentication.
             url = do_authentication(form_proc, config, username, totp)
             totp = None
