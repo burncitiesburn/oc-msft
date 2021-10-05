@@ -198,6 +198,64 @@ class FormProcessor:
                 cookie.value = value
 
 
+def do_login(form_proc, config, username):
+    """
+    Perform a login with the given username or redirect to the federated
+    login page.
+    """
+    data = {
+        "flowToken": config["sFT"],
+        "originalRequest": config["sCtx"],
+        "username": username,
+    }
+    url = config["urlGetCredentialType"]
+    creds = form_proc.get_json(url, data)
+    return creds["Credentials"]["FederationRedirectUrl"]
+
+
+def do_authentication(form_proc, config, username, totp):
+    """
+    Pick one of the available authentication methods and try to
+    authenticate with it.
+    """
+
+    data = {
+        "AuthMethodId": "PhoneAppOTP",
+        "Method": "BeginAuth",
+        "ctx": config["sCtx"],
+        "flowToken": config["sFT"],
+    }
+    begin_auth = form_proc.get_json(config["urlBeginAuth"], data)
+
+    if totp:
+        logging.info("Generating OATH TOTP token code")
+        token = totp.now()
+    else:
+        token = getpass("OTP token: ")
+    data = {
+        "AdditionalAuthData": token,
+        "AuthMethodId": "PhoneAppOTP",
+        "Ctx": config["sCtx"],
+        "FlowToken": begin_auth["FlowToken"],
+        "Method": "EndAuth",
+        "PollCount": 1,
+        "SessionId": begin_auth["SessionId"],
+    }
+    end_auth = form_proc.get_json(config["urlEndAuth"], data)
+
+    data = {
+        "canary": config["canary"],
+        "flowToken": end_auth["FlowToken"],
+        "hpgrequestid": begin_auth["SessionId"],
+        "login": username,
+        "mfaAuthMethod": "PhoneAppOTP",
+        "otc": token,
+        "request": config["sCtx"],
+    }
+    logging.debug("> %s", data)
+    return Request(config["urlPost"], data=urlencode(data).encode())
+
+
 def tncc_preauth(wrapper, dspreauth, dssignin, host):
     """
     Run a TNCC host checker script and return the updated DSPREAUTH cookie.
@@ -258,53 +316,12 @@ def login(args):
                 sys.stderr.write("Username: ")
                 username = input()
 
-            data = {
-                "flowToken": config["sFT"],
-                "originalRequest": config["sCtx"],
-                "username": username,
-            }
-            url = config["urlGetCredentialType"]
-            creds = form_proc.get_json(url, data)
-            url = creds["Credentials"]["FederationRedirectUrl"]
+            url = do_login(form_proc, config, username)
 
         elif "urlPost" in config:
             # Step two: perform authentication.
-            data = {
-                "AuthMethodId": "PhoneAppOTP",
-                "Method": "BeginAuth",
-                "ctx": config["sCtx"],
-                "flowToken": config["sFT"],
-            }
-            begin_auth = form_proc.get_json(config["urlBeginAuth"], data)
-
-            if totp:
-                logging.info("Generating OATH TOTP token code")
-                token = totp.now()
-                totp = None
-            else:
-                token = getpass("OTP token: ")
-            data = {
-                "AdditionalAuthData": token,
-                "AuthMethodId": "PhoneAppOTP",
-                "Ctx": config["sCtx"],
-                "FlowToken": begin_auth["FlowToken"],
-                "Method": "EndAuth",
-                "PollCount": 1,
-                "SessionId": begin_auth["SessionId"],
-            }
-            end_auth = form_proc.get_json(config["urlEndAuth"], data)
-
-            data = {
-                "canary": config["canary"],
-                "flowToken": end_auth["FlowToken"],
-                "hpgrequestid": begin_auth["SessionId"],
-                "login": username,
-                "mfaAuthMethod": "PhoneAppOTP",
-                "otc": token,
-                "request": config["sCtx"],
-            }
-            logging.debug("> %s", data)
-            url = Request(config["urlPost"], data=urlencode(data).encode())
+            url = do_authentication(form_proc, config, username, totp)
+            totp = None
             username = None
 
         elif wrapper and form_proc.get_cookie("DSPREAUTH"):
