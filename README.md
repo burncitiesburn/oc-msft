@@ -76,9 +76,8 @@ It can therefore be used just like OpenConnect's `--authenticate` option:
 Bugs
 ----
 
-Due to time constraints and limited ability for testing this script
-currently supports exactly one use case. Specifically, 2 factor
-authentication is performed using a time-based one-time password.
+Due to time constraints and limited testing ability, only a small portion of
+the possible modes of operation are supported.
 
 Additions and modifications to expand the support are welcome.
 
