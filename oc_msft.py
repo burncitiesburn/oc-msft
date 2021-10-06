@@ -226,6 +226,8 @@ def do_authentication(form_proc, config, username, totp):
         "flowToken": config["sFT"],
     }
     begin_auth = form_proc.get_json(config["urlBeginAuth"], data)
+    if not begin_auth["Success"]:
+        logging.warning(begin_auth["Message"])
 
     if totp:
         logging.info("Generating OATH TOTP token code")
@@ -242,6 +244,8 @@ def do_authentication(form_proc, config, username, totp):
         "SessionId": begin_auth["SessionId"],
     }
     end_auth = form_proc.get_json(config["urlEndAuth"], data)
+    if not end_auth["Success"]:
+        logging.warning(end_auth["Message"])
 
     data = {
         "canary": config["canary"],
