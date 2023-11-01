@@ -13,6 +13,7 @@ from getpass import getpass
 from html.parser import HTMLParser
 from socket import socketpair
 from subprocess import Popen
+from typing import Any
 from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import Request
 import cgi
@@ -23,6 +24,7 @@ import sys
 import urllib.request
 
 import pyotp
+import keyring
 
 
 # The known HTML form names and the submit buttons to be used.
@@ -35,6 +37,8 @@ FORMS = {
 
 
 Form = namedtuple("Form", ["action", "fields"])
+
+
 class FormParser(HTMLParser):
     """
     I extract forms from a web page.
@@ -42,6 +46,7 @@ class FormParser(HTMLParser):
     Additionally, if there is a <script> tag which sets the global $Config
     variable, I store its value.
     """
+
     def __init__(self):
         super().__init__()
         self.forms = {}
@@ -64,8 +69,10 @@ class FormParser(HTMLParser):
 
         elif self.current and tag == "input" and "name" in attrs:
             # Only include the correct submit button.
-            if attrs.get("type") == "submit" and \
-               attrs["name"] not in FORMS[self.current]:
+            if (
+                attrs.get("type") == "submit"
+                and attrs["name"] not in FORMS[self.current]
+            ):
                 logging.info(
                     "%s: %s: unknown submit button", self.current, attrs["name"]
                 )
@@ -73,9 +80,7 @@ class FormParser(HTMLParser):
 
             form = self.forms[self.current]
             if attrs["name"] in form.fields:
-                logging.warning(
-                    "%s: %s: field redefined", self.current, attrs["name"]
-                )
+                logging.warning("%s: %s: field redefined", self.current, attrs["name"])
             form.fields[attrs["name"]] = attrs.get("value", "")
 
     def handle_endtag(self, tag):
@@ -90,7 +95,10 @@ class FormParser(HTMLParser):
             start = data.find("$Config=")
             end = data.rfind("}")
             if start >= 0 and end >= 0:
-                self.config = json.loads(data[8 + start:1 + end])
+                self.config = json.loads(data[8 + start: 1 + end])
+
+    def error(self, message: str) -> Any:
+        pass
 
 
 class FormProcessor:
@@ -98,7 +106,8 @@ class FormProcessor:
     I load, fill in and send HTML forms. I provide access to the cookies
     exchanged with the server.
     """
-    def __init__(self, user_agent, password):
+
+    def __init__(self, user_agent="DSClient; PulseLinux", password=None):
         self.password = password
         self.cookies = urllib.request.HTTPCookieProcessor()
         self.opener = urllib.request.build_opener(self.cookies)
@@ -112,9 +121,9 @@ class FormProcessor:
         """
         logging.info("> %s", url.full_url if isinstance(url, Request) else url)
         res = self.opener.open(url)
-        # Save URL after redirections.
         self.url = res.url
         logging.debug("< %s", self.url)
+
         return res
 
     def parse_url(self, url, parser):
@@ -141,7 +150,7 @@ class FormProcessor:
         req = Request(
             url,
             data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         with self.load_url(req) as res:
             res = json.load(res)
@@ -164,8 +173,6 @@ class FormProcessor:
 
             # Handle an arbitrary known form.
             name = next((n for n in forms.forms if n in FORMS), None)
-            if not name:
-                raise RuntimeError("No known form.")
 
             form = forms.forms[name]
             if "Password" in form.fields:
@@ -179,7 +186,6 @@ class FormProcessor:
             url = urljoin(self.url, form.action)
             url = Request(url, data=urlencode(form.fields).encode())
 
-
     def get_cookie(self, name, fallback=None):
         """
         Return the named cookie if it has been received.
@@ -188,6 +194,24 @@ class FormProcessor:
             if name == cookie.name:
                 return cookie.value
         return fallback
+
+    def get_cookies_as_string(self):
+        """
+        Return list of set cookies from the authentication as a string
+        """
+        cookie_string = ""
+        for cookie in self.cookies.cookiejar:
+            if cookie.name in [
+                "DSSignInURL",
+                "DSLaunchURL",
+                "DSID",
+                "DSDID",
+                "DSFirstAcess",
+                "DSPSALPREF",
+                "DSLastAccess",
+            ]:
+                cookie_string += cookie.name + "=" + cookie.value + "; "
+        return cookie_string
 
     def set_cookie(self, name, value):
         """
@@ -234,16 +258,13 @@ def do_login(form_proc, config, username):
     url = config["urlGetCredentialType"]
     creds = form_proc.get_json(url, data)
     if "FederationRedirectUrl" in creds["Credentials"]:
-        return urljoin(
-            form_proc.url,
-            creds["Credentials"]["FederationRedirectUrl"]
-        )
+        return urljoin(form_proc.url, creds["Credentials"]["FederationRedirectUrl"])
 
     if form_proc.password:
         password = form_proc.password
-        form_proc.password = None
     else:
-        password = getpass("Password: ")
+        password = keyring.get_password("oc-msft", username) or getpass("Password: ")
+        keyring.set_password("oc-msft", username, password)
     data = {
         "canary": config["canary"],
         "ctx": config["sCtx"],
@@ -265,13 +286,13 @@ def do_authentication(form_proc, config, username, totp):
 
     # Pick an authentication method.
     user_proofs = {
-        proof["authMethodId"]: proof["display"]
-        for proof in config["arrUserProofs"]
+        proof["authMethodId"]: proof["display"] for proof in config["arrUserProofs"]
     }
     if totp and "PhoneAppOTP" in user_proofs:
         method = "PhoneAppOTP"
     else:
         method = choice("Choose an authentication method", user_proofs)
+
     data = {
         "AuthMethodId": method,
         "Method": "BeginAuth",
@@ -279,15 +300,12 @@ def do_authentication(form_proc, config, username, totp):
         "flowToken": config["sFT"],
     }
     begin_auth = form_proc.get_json(config["urlBeginAuth"], data)
+
     if not begin_auth["Success"]:
-        logging.warning(begin_auth["Message"])
+        logging.warning(begin_auth["Message"]) 
 
     # Perform the authentication.
-    if totp and method == "PhoneAppOTP":
-        logging.info("Generating OATH TOTP token code")
-        token = totp.now()
-    else:
-        token = getpass("OTP token: ")
+    token = totp.now() if (totp and method == "PhoneAppOTP") else getpass("OTP token: ")
     data = {
         "AdditionalAuthData": token,
         "AuthMethodId": method,
@@ -298,6 +316,7 @@ def do_authentication(form_proc, config, username, totp):
         "SessionId": begin_auth["SessionId"],
     }
     end_auth = form_proc.get_json(config["urlEndAuth"], data)
+
     if not end_auth["Success"]:
         logging.warning(end_auth["Message"])
 
@@ -319,23 +338,18 @@ def tncc_preauth(wrapper, dspreauth, dssignin, host):
     """
     Run a TNCC host checker script and return the updated DSPREAUTH cookie.
     """
-    logging.info(
-        "Trying to run TNCC/Host Checker Trojan script: %s %s", wrapper, host
-    )
+    logging.debug("Trying to run TNCC/Host Checker script: %s %s", wrapper, host)
+    sys.stderr.write("Emulating host-checker requirement.\n")
     sock0, sock1 = socketpair()
     Popen([wrapper, host], stdin=sock1, stdout=sys.stderr, text=True)
     sock1.close()
     sock0.sendall(
-        "start\n"
-        f"IC={host}\n"
-        f"Cookie={dspreauth}\n"
-        f"DSSIGNIN={dssignin}\n".encode("ascii")
+        f"start\nIC={host}\nCookie={dspreauth}\nDSSIGNIN={dssignin}\n".encode("ascii")
     )
-    buf = sock0.recv(4096).decode("ascii")
-    status, _, dspreauth, buf = buf.split("\n", 3)
+    status, _, dspreauth, buf = sock0.recv(4096).decode("ascii").split("\n", 3)
     if status != "200":
         raise RuntimeError(f"tncc status={status}")
-    logging.info("Got new DSPREAUTH cookie from TNCC: %s", dspreauth)
+    logging.debug("Got new DSPREAUTH cookie from TNCC: %s", dspreauth)
     return dspreauth
 
 
@@ -352,25 +366,26 @@ def login(args):
         verbose     Verbosity, optional.
         wrapper     TNCC wrapper script, optional.
     """
-    logging.basicConfig(
-        level=max(0, logging.WARNING - 10 * (args.verbose or 0))
-    )
-    form_proc = FormProcessor(args.user_agent, args.password)
+    logging.basicConfig(level=max(0, logging.WARNING - 10 * (args.verbose or 0)))
+    form_proc = FormProcessor("", args.password)
     totp = pyotp.TOTP(args.secret) if args.secret else None
     url = args.server
     username = args.user
     wrapper = args.wrapper
+
     while True:
         config = form_proc.process_forms(url)
+
         if form_proc.get_cookie("DSID"):
             return {
                 "CONNECT_URL": form_proc.url,
-                "COOKIE": form_proc.get_cookie("DSID"),
+                "COOKIE": form_proc.get_cookies_as_string(),
                 "HOST": urlparse(form_proc.url).netloc,
             }
 
         if "urlGetCredentialType" in config:
             # Step one: login or redirect to federated login page.
+            sys.stderr.write("handing back to microsoft SSO for auth\n")
             if not username:
                 sys.stderr.write("Username: ")
                 username = input()
@@ -400,18 +415,16 @@ def login(args):
                 wrapper,
                 form_proc.get_cookie("DSPREAUTH"),
                 form_proc.get_cookie("DSSIGNIN", "null"),
-                urlparse(url).netloc
+                urlparse(url).netloc,
             )
             form_proc.set_cookie("DSPREAUTH", dspreauth)
             wrapper = None
 
         else:
-            raise RuntimeError(
-                "Failed to find or parse web form in login page."
-            )
+            raise RuntimeError("Failed to find or parse web form in login page.")
 
 
-def parse_args(args = None):
+def parse_args(args=None):
     """
     Process command-line arguments.
     """
@@ -420,11 +433,9 @@ def parse_args(args = None):
     parser.add_argument("-p", "--password", help="login password")
     parser.add_argument("-s", "--secret", help="TOTP secret (SHA1 base32)")
     parser.add_argument("-u", "--user", help="login username")
-    parser.add_argument(
-        "-v", "--verbose", action="count", help="increase verbosity"
-    )
-    parser.add_argument("-w", "--wrapper", help="trojan wrapper script")
-    parser.add_argument("server", help="VPN server")
+    parser.add_argument("-v", "--verbose", action="count", help="increase verbosity")
+    parser.add_argument("-w", "--wrapper", help="wrapper script")
+    parser.add_argument("-S", "--server", help="VPN server")
     return parser.parse_args(args)
 
 
@@ -434,7 +445,7 @@ def main():
     """
     env = login(parse_args())
     for key, val in env.items():
-        print(f"{key}={shlex.quote(val)}")
+        print(f"{key}={shlex.quote(val)};")
 
 
 if __name__ == "__main__":
